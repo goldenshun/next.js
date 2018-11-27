@@ -1,6 +1,19 @@
-/* global window, document */
+/* global document */
 import EventEmitter from 'next-server/dist/lib/EventEmitter'
 
+// smaller version of https://gist.github.com/igrigorik/a02f2359f3bc50ca7a9c
+function supportsPreload (list) {
+  if (!list || !list.supports) {
+    return false
+  }
+  try {
+    return list.supports('preload')
+  } catch (e) {
+    return false
+  }
+}
+
+const hasPreload = supportsPreload(document.createElement('link').relList)
 const webpackModule = module
 
 export default class PageLoader {
@@ -9,7 +22,7 @@ export default class PageLoader {
     this.assetPrefix = assetPrefix
 
     this.pageCache = {}
-    this.pageLoadedHandlers = {}
+    this.prefetchCache = new Set()
     this.pageRegisterEvents = new EventEmitter()
     this.loadingRoutes = {}
   }
@@ -107,6 +120,37 @@ export default class PageLoader {
       webpackModule.hot.status(check)
     } else {
       register()
+    }
+  }
+
+  async prefetch (route) {
+    route = this.normalizeRoute(route)
+    const scriptRoute = route === '/' ? '/index.js' : `${route}.js`
+    if (this.prefetchCache.has(scriptRoute)) {
+      return
+    }
+    this.prefetchCache.add(scriptRoute)
+
+    // Feature detection is used to see if preload is supported
+    // If not fall back to loading script tags before the page is loaded
+    // https://caniuse.com/#feat=link-rel-preload
+    if (hasPreload) {
+      const link = document.createElement('link')
+      link.rel = 'preload'
+      link.href = `${this.assetPrefix}/_next/static/${encodeURIComponent(this.buildId)}/pages${scriptRoute}`
+      link.as = 'script'
+      document.head.appendChild(link)
+      return
+    }
+
+    if (document.readyState === 'complete') {
+      await this.loadPage(route)
+    } else {
+      return new Promise((resolve, reject) => {
+        window.addEventListener('load', () => {
+          this.loadPage(route).then(() => resolve(), reject)
+        })
+      })
     }
   }
 
