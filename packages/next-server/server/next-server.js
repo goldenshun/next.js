@@ -132,6 +132,18 @@ export default class Server {
       }
     ]
 
+    if (this.nextConfig.routes) {
+      this.nextConfig.routes.forEach(rt => {
+        routes.push({
+          match: route(rt.path),
+          fn: async (req, res, params, parsedUrl) => {
+            const query = { ...parsedUrl.query, ...params }
+            await this.render(req, res, rt.page, query, parsedUrl)
+          }
+        })
+      })
+    }
+
     if (this.nextConfig.useFileSystemPublicRoutes) {
       // It's very important to keep this route's param optional.
       // (but it should support as many params as needed, separated by '/')
